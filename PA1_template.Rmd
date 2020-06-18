@@ -1,25 +1,144 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+#Introduction:
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the “quantified self” movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. 
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+```{r}
+## Reading dataset
+act <- read.csv("activity.csv")
+nrow(act)
+names(act)
+```
+The variables included in this dataset are:
+
+steps: Number of steps taking in a 5-minute interval 
+date: The date on which the measurement was taken in YYYY-MM-DD format
+interval: Identifier for the 5-minute interval in which measurement was taken.
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
+```{r}
+head(act)
+```
+```{r}
+sum(is.na(act$steps))
+```
+
+There are 2304 missing values in column steps
+```{r}
+class(act$date)
+act$date <- as.Date(act$date, "%Y-%m-%d")
+library(dplyr)
+total_steps_per_day <- act %>% group_by(date) %>% summarise(total_steps=sum(steps, na.rm= TRUE))
+
+hist(total_steps_per_day$total_steps, xlab = "Total Steps per day",col = "darkred", main= "Total Steps per day")
+```
 
 
-## Loading and preprocessing the data
+The person mostly take steps within 20000
+```{r}
+##Mean and median of total steps taken per day
+summary(total_steps_per_day$total_steps)
+```
+Mean is 9354 and median is 10395.
+```{r}
+t <- tapply(act$steps, act$date, mean, na.rm=TRUE)
+date_wise_mean <- as.data.frame(t)
+names(date_wise_mean) <- c("Mean steps")
+library(dplyr)
+library(tidyverse)
+date_wise_mean <- rownames_to_column(date_wise_mean, "Date")
+date_wise_mean_final <- date_wise_mean %>% drop_na("Mean steps")
+date_wise_mean_final$Date <- as.Date(date_wise_mean_final$Date, format="%Y-%m-%d")
+plot(date_wise_mean_final$Date, date_wise_mean_final$`Mean steps`, col="darkred", xlab = "Date", ylab = "Mean Steps", main="Mean steps per day", type = "l")
+```
 
 
+The lower values of steps mean steps per day indicates that large steps are concentrated within a short time interval.
+Now, lets study each 5 min interval for clarity on what time the person's activity is maximum.
+```{r}
+act$interval <- factor(act$interval)
+t2 <- tapply(act$steps, act$interval, mean,na.rm= TRUE)
+interval_wise_mean <- as.data.frame(t2)
+names(interval_wise_mean) <- c("Mean steps")
+interval_wise_mean <- rownames_to_column(interval_wise_mean, "Interval")
+interval_wise_mean_final <- interval_wise_mean %>% drop_na("Mean steps")
+interval_wise_mean_final$Interval <- as.numeric(interval_wise_mean_final$Interval)
+plot(interval_wise_mean_final$Interval, interval_wise_mean_final$`Mean steps`, col="darkred", xlab = "Interval", ylab = "Mean Steps", main="Mean steps in each 5 min interval", type = "l", xlim=c(0,2400))
 
-## What is mean total number of steps taken per day?
+```
+```{r}
+
+summary(t2)
+```
+```{r}
+t2[t2==max(t2)]
+```
+
+Hence, the maximum value is 206.17 at interval tagged 835.
+The above plots is made by neglecting the missing values. Now let's try to inpute the missing data.
+
+```{r}
+sum(is.na(act$steps))
+```
+There are 2304 rows with NA values of steps.
+```{r}
+nullval <- subset(act, is.na(act$steps))
+nullval$date <- factor(nullval$date)
+levels(nullval$date)
+```
+There are 8 levels of date that have values NA i.e measurments not taken on that day.
+
+Since, there's no specific pattern we observe, we can replace missing values with the mean of steps taking into consideration the 5 min interval and weekday.
+```{r}
+act$day <- weekdays(act$date)
+for(i in 1:nrow(act)){
+  if(is.na(act[i,1])== TRUE){
+    wk <- act[i,4]
+    int <- act[i,3]
+    act[i,1] <- mean(act[act$day == wk & act$interval==int,1], na.rm = TRUE)
+  } 
+}
+```
+Lets now check if all missing values are replaced or not.
+```{r}
+sum(is.na(act$steps))
+```
+Hence no missing values are present now.
+```{r}
+total_steps_per_day_new <- act %>% group_by(date) %>% summarise(total_steps=sum(steps, na.rm= TRUE))
+
+hist(total_steps_per_day$total_steps, xlab = "Total Steps per day ",col = "darkred", main= "Total Steps per day (Missing values imputed")
+```
+
+After replacing missing values, mostly the person takes steps within 20000
+
+Summary of Total number of steps taken per day (after imputation of missing values)
+```{r}
+summary(total_steps_per_day_new)
+```
+Median is 11015 and mean is 10821
+```{r}
+summary(total_steps_per_day)
+```
+Hence, the values have changed considerably. Lets understand this by plotting it.
+```{r}
+library(ggplot2)
+ggplot()+geom_line(data= total_steps_per_day, aes(x= date, y= total_steps,color="blue"))+ geom_line(data= total_steps_per_day_new, aes(x=date, y=total_steps), color="red")+xlab("Date")+ylab("Total steps per day")+ggtitle("Total Steps per day")+theme_bw()+scale_color_manual(labels = c("Before imputation", "After imputation"), values = c("blue", "red"))
+```
 
 
-
-## What is the average daily activity pattern?
-
-
-
-## Imputing missing values
-
-
-
-## Are there differences in activity patterns between weekdays and weekends?
+Now lets make a panel plot of 5 min interval based on weekdays and weekends
+```{r}
+act$day <- factor(act$day)
+weekend <- filter(act, day %in% c("Saturday","Sunday"))
+weekday <- filter(act, day %in% c("Monday","Tuesday","Wednesday","Thursday","Friday"))
+mean_steps_weekdays <- weekday %>% group_by(interval) %>% summarise(steps_weekdays = mean(steps, na.rm=TRUE))
+mean_steps_weekend <- weekend %>% group_by(interval) %>% summarise(steps_weekend = mean(steps, na.rm=TRUE))
+df <- merge(mean_steps_weekdays, mean_steps_weekend, by = "interval")
+par(mfrow=c(1,2), mar = c(4, 4, 2, 1), oma = c(0, 0, 2, 0))
+with(df, {
+  plot(interval, steps_weekdays, main="Weekdays", xlab= "Interval", ylab="Mean Steps", type="l", color="red")
+  plot(interval,steps_weekend,type="l", main="Weekends", xlab= "Interval", ylab="Mean Steps")
+  mtext("Mean steps during weekdays and weekends", outer= TRUE)
+})
+```
